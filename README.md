@@ -1,152 +1,60 @@
+## Reactobiome and reaction richness for Liver Cirrhosis gut microbiome samples
+
+### Prerequisites
 Before starting, make sure you have the following:
 
 - MATLAB installed on your system.
 - Add the MIGRENE Toolbox directory to your MATLAB path ([here](https://github.com/sysbiomelab/MIGRENE/blob/master/README.md?plain=1#L5)).
-- Download liver_cirrhosis.zip file and unzip it in your local directory.
+- Download the repository or the files i.e., [BacterialAbundace_LiverCirrhosis.xlsx](LiverCirrhosis_MS/BacterialAbundace_LiverCirrhosis.xlsx), [GEMmodels.zip](LiverCirrhosis_MS/BacterialAbundace_LiverCirrhosis.xlsx), [metadata_LiverCirrhosis.txt](LiverCirrhosis_MS/BacterialAbundace_LiverCirrhosis.xlsx), and save them to the same directory on your computer. unzip `GEMmodels.zip`. 
 
-### Setting up Paths
+### Load Bacterial Abundance
 
- Specify paths to necessary files and directories.
- 
- ```matlab
-% get path to where the MIGRENE Toolbox is located
-MIGDIR = fileparts(which('MIGRENE_pipeline'));
-% provide the path to bacterial species (MSP) gene info and bacterial
-% abundance obtained from metagenomics analysis
-CATDIR=[MIGDIR filesep 'data'];
-ABUNDANCE=[CATDIR filesep 'BacterialAbundance.xlsx'];
-PATHWAY=[CATDIR filesep 'pathways.xlsx'];
-% provide the path to microbiomeGEM (generated in
-% IntegrationCatalogToModel.m) and bibliome data.
-MATDIR=[MIGDIR filesep 'mat'];
-MODEL=[MATDIR filesep 'microbiomeGEM.mat'];
-BIBLIOME=[MATDIR filesep 'bibliome.mat'];
-% define a directory to save microbiomeGEM
-SAVEDIR=[MIGDIR filesep 'saveDir'];
-% number of cores specified for parallelization. it can be a positive
-% integer or a range specified as a 2-element vector of integers
-numWorkers=4;
-```
-
-### Loading Bacterial Abundance
-
-Load bacterial abundance data from Excel file
+Load bacterial abundance data from an Excel file
 
 ```matlab
-[abundance, infoFile, ~] = xlsread(ABUNDANCE);
+cd 'to\your\local\directory'
+[abundance,infoFile,~]=xlsread('BacterialAbundace_LiverCirrhosis.xlsx');;
 modelList = infoFile(2:end, 1);
 sampleName = infoFile(1, 2:end);
 
 %check the samples,
-% Remove the MSP name if the abundance of bacteria in all samples is zero
+% Remove the MSP name if the abundance of bacteria is zero in all samples
 abundance=abundance(sum(abundance,2)~=0,:);
 modelList=modelList(sum(abundance,2)~=0,:);
 % Remove the samples if there is no bacterial abundance
 sampleName=sampleName(sum(abundance,1)~=0);
 abundance=abundance(:,sum(abundance,1)~=0);
 ```
-
-
-### Initializing COBRA Toolbox
-Initiate the COBRA Toolbox for constraint-based modeling.
-
-```matlab
-initCobraToolbox()
- ```
  
-## Tutorial Overview
+### Generate microbiome reaction richness.
 
-The tutorial consists of the following main steps:
-1. Generating microbiome reaction richness.
-2. Generating reaction abundance.
-3. Generating reactobiome.
-4. Generating reaction set enrichment.
-5. generating community models.
-
-## Tutorial Details
-### Generating microbiome reaction richness.
-
-Please provide the path where the models are available and the name of the model assigned in the .mat files.
+Provide the path where the models are saved and the name of the model assigned in the .mat files as follows:
+```matlab
+PathToModels.path='.\GEMmodels';
+PathToModels.name='model';
+```
+Generate the gut microbiome reaction richness for all individuals
 
 ```matlab
-PathToModels.path=SAVEDIR;
-PathToModels.name='contextSpecificModel';
-% generate gut microbiome reaction composition (reaction richness) of all individuals 
 richness= RxnRichnessGenerator(modelList,PathToModels,abundance,sampleName);
-
 ```
 
-### Generating reaction abundance.
-
-generate reaction abundance for all individuals; the function generates both reaction abundance and relative reaction abundance
+Box plot of reaction richness for normal and disease samples.
 
 ```matlab
-[reactionRelativeAbun, rxnAbunPerSample]= ReactionAbundanceGenerator(modelList,PathToModels,abundance,sampleName);
+metadata=readtable('metadata_LiverCirrhosis.txt');
+meta1 = table2array(metadata(:,2));
+meta1 = char(meta1);
+eichnessValue=richness{:,2};
+boxplot(eichnessValue,meta1)
+title('Reaction richness')
 ```
+![richness](https://github.com/sysbiomelab/LiverCirrhosis_MS/assets/63523016/1318094f-4ed8-4f8e-8872-36fe4acfc79d)
 
-### Generating reactobiome.
+
+### Generate reactobiome.
 
 ```matlab
 Reactobiome= ReactobiomeGenerator(modelList,PathToModels,abundance,sampleName);
 ```
 
-### Conducting enrichment analysis.
-
-You need to prepare the following files:
-
-1) a file includes pathway terms and the IDs that could be KO, EC,kegg reaction ID, etc. Here we use the KEGG pathway terms with Kegg reaction ID
-
-```matlab
-[~,terms,~]=xlsread(PATHWAY);
-terms=terms(2:end,:);
-```
-
-2) a file for ID mapping between reaction names in the models and the IDs in the pathway file. here, we use the info in the reference model. 
-
-```matlab
-load(MODEL)
-IDmap=[microbiomeGEM.rxns microbiomeGEM.rxnRN];
-Index = find(not(cellfun('isempty',IDmap(:,2))));
-IDmap=IDmap(Index,:);
-```
-
-If you assign the p-value, then coverage of non-significance terms is set as zero. if you dont define the p-value, it returns all. 
-
-```matlab
-p_value=0.05;
-[coverageRSE,pRSE]= pRSEGenerator(modelList,PathToModels,abundance,sampleName,IDmap,terms,p_value);
-```
-
-coverageRSE shows the coverage of each pathway in the samples and pRSE shows the p-value of the pathways in the samples
-
-### Generating community models.
-
-Define the number of top abundant bacteria for community modeling. Here we generate communities for top 10 bacteria in each sample.
-
-```matlab
-top=10;
-thre=[];
-for i=1:size(abundance,2)
-t1=sort(abundance(:,i),1,'descend');
-thre(i,1)=t1(top,1);
-abundance(find(abundance(:,i) < thre(i,1)),i)=0;
-end
-boxplot(thre)
-median(thre)
-```
-
-Generation of community models
-
-```matlab
-%specify the metabolite ID and exchange reaction for biomass (optional)
-biomass.EXrxn='Ex_Biomass';
-biomass.mets='cpd11416ee[lu]';
-% Make a directory to save generated community models
-if ~exist([SAVEDIR filesep 'community'],'dir')
-mkdir([SAVEDIR filesep 'community']);
-end
-PathToSave=[SAVEDIR filesep 'community'];
-[report]= MakeCommunity(modelList,PathToModels,abundance,sampleName,PathToSave,biomass);
-```
-
-In report, "one" shows that a community model has been generated for the individual in PathToSave directory
